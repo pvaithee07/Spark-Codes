@@ -1,0 +1,304 @@
+
+Problem 2 - 
+
+order_df=sqlContext.read.formmat('csv').load('/data/retail_db/orders/part-00000')
+
+order_df=sqlContext.read.load('/data/retail_db/orders/part-00000')
+
+
+orders=open('/data/retail_db/orders/part-00000').read().splitlines()
+order_rdd=sc.parallelize(orders)
+orders_map=order_rdd.map(lambda x: (int(x.split(',')[0]), int(x.split(',')[2])))
+
+from pyspark import Row
+order_df=orders_map.map(lambda x: Row(order_id=x[0], order_cust_id=x[1])).toDF()
+order_df.registerTempTable('orders')
+
+
+customers=open('/data/retail_db/customers/part-00000').read().splitlines()
+cust_rdd=sc.parallelize(customers)
+cust_map=cust_rdd.map(lambda x: (int(x.split(',')[0]), x.split(',')[1], x.split(',')[2]))
+
+cust_df=cust_map.map(lambda x: Row(cust_id=x[0], cust_fname=x[1], cust_lname=x[2]) ).toDF()
+cust_df.registerTempTable('customers')
+
+count=sqlContext.sql('select i.cust_fname, i.cust_lname from \
+(select * from orders o right outer join customers c \ 
+on o.order_cust_id = c.cust_id) i \
+where i.order_cust_id is null \
+order by cust_fname, cust_lname' ) 
+
+sqlContext.setConf("spark.sql.shuffle.partitions", "1")
+
+count.rdd.map(lambda x:x[0] + ',' + x[1] ).coalesce(1).saveAsTextFile('/user/pvaithee07/problem2/solution')
+
+
+
+Problem 3 - 
+
+
+crime = sc.textFile('/public/crime/csv')
+crime_map=crime.filter(lambda x:x.split(',')[0]!='ID').map(lambda x: (x.split(',')[0],x.split(',')[5],x.split(',')[7]))
+
+from pyspark import Row
+crime_df=crime_map.map(lambda x: Row(crime_id=x[0], crime_type=x[1], crime_desc=x[2])).toDF()
+crime_df.registerTempTable('crime')
+
+count=sqlContext.sql('select crime_type, count(crime_type) ct from crime \ 
+where crime_desc like "RESIDENCE%" \
+group by crime_type \
+order by ct desc \
+limit 3')
+
+count.write.json('/user/pvaithee07/problem3/solution')
+
+
+
+Problem 4 - 
+
+
+Convert to paraquet
+
+
+hadoop fs -copyFromLocal /data/nyse /user/pvaithee07/nyse/data
+from pyspark import Row
+ny=sc.textFile('/user/pvaithee07/nyse/data').map(lambda x: (x.split(',')[0], x.split(',')[1], float(x.split(',')[2]), \
+float(x.split(',')[3]), float(x.split(',')[4]), float(x.split(',')[5]), int(x.split(',')[6])))
+
+ny_df=ny.map(lambda x: Row(stockticker=x[0], transactiondate=x[1], openprice=x[2], highprice=x[3], lowprice=x[4], \
+closeprice=x[5], volume=x[6])).toDF()
+
+
+ny_df.coalesce(1).write.parquet('/user/pvaithee07/problem4/solution2')
+
+
+Problem 5 - 
+
+
+Word Count 
+
+
+pyspark --master yarn --num-executors 10 --executor-memory 3G --executor-cores 2 --packages com.databricks:spark-avro_2.10:2.0.1
+
+wc=sc.textFile('/public/randomtextwriter')
+wc_map=wc.flatMap(lambda x: x.split(' ')).map(lambda x: (x,1))
+wc_count=wc_map.reduceByKey((lambda x, y: x + y), 8)
+
+from pyspark import Row
+
+wc_df=wc_count.map(lambda x: Row(word=x[0], count=x[1])).toDF()
+wc_df.write.format('com.databricks.spark.avro').save('/user/pvaithee07/problem5/solution')
+
+
+
+
+Problem 6 - 
+
+order=sc.textFile('/public/retail_db/orders').map(lambda x: (int(x.split(',')[0]),int(x.split(',')[2])) )
+customer=sc.textFile('/public/retail_db/customers').filter(lambda x: x.split(',')[7] == 'TX').map(lambda x: (int(x.split(',')[0]), x.split(',')[1], x.split(',')[2]))
+
+from pyspark import Row
+order_df=order.map(lambda x: Row(order_id=x[0], order_customer_id=x[1]) ).toDF()
+customer_df=customer.map(lambda x: Row(cust_id=x[0], cust_fname=x[1], cust_lname=x[2])).toDF()
+
+order_df.registerTempTable('orders')
+customer_df.registerTempTable('customers')
+
+qu=sqlContext.sql('select c.cust_fname, c.cust_lname, sum(o.order_id) order_count \
+from customers c join orders o \
+on c.cust_id = o.order_customer_id \
+group by c.cust_fname, c.cust_lname')
+
+qu.rdd.map(lambda x: x[0] + '\t' + x[1] + '\t' + str(x[2])).saveAsTextFile('/user/pvaithee07/problem6/solution')
+
+
+
+Problem 7 - 
+
+
+product=sc.textFile('/public/retail_db/products').map(lambda x: (int(x.split(',')[0]), x.split(',')[2], float(x.split(',')[4])))
+
+
+orders=sc.textFile('/public/retail_db/orders').filter(lambda x: (x.split(',')[3]=='COMPLETE' or x.split(',')[3]=='CLOSED') )
+orders_map=orders.filter(lambda x: x.split(',')[1]=='2013-07-26 00:00:00.0').map(lambda x: (int(x.split(',')[0]), x.split(',')[1]))
+
+order_item=sc.textFile('/public/retail_db/order_items').map(lambda x: (int(x.split(',')[1]), int(x.split(',')[2]), int(x.split(',')[3])) )
+
+from pyspark import Row
+
+product_df=product.map(lambda x: Row(product_id=x[0], product_name=x[1], product_price=x[2])).toDF()
+orders_df=orders_map.map(lambda x: Row(order_id=x[0], order_date=x[1]) ).toDF()
+order_itemsdf=order_item.map(lambda x: Row(order_item_order_id=x[0], order_item_product_id=x[1], order_item_quantity=x[2])).toDF()
+
+product_df.registerTempTable('products')
+orders_df.registerTempTable('orders')
+order_itemsdf.registerTempTable('order_items')
+
+select i.order_date,  i.revenue, i.product_name, i.product_category_id from \ 
+q=sqlContext.sql('select o.order_date, (oi.order_item_product_id * p.product_price) revenue, p.product_name, p.product_id \
+from \
+orders o join order_items oi on o.order_id = oi.order_item_order_id \
+join products p on oi.order_item_product_id = p.product_id \
+rank() over (partition by p.product_id order by (oi.order_item_product_id * p.product_price) desc) ranker') i
+where i.ranker <=5
+
+
+
+
+Problem 8 - 
+
+orders=sc.textFile('/public/retail_db/orders').filter(lambda x: x.split(',')[3] == 'PENDING_PAYMENT').map\
+(lambda x: (int(x.split(',')[0]),x.split(',')[1],int(x.split(',')[2]),x.split(',')[3]) )
+
+from pyspark import Row
+orders_df=orders.map(lambda x: Row(order_id=x[0], order_date=x[1], order_cust_id=x[2], order_status=x[3])).toDF()
+orders_df.registerTempTable('Orders')
+
+q=sqlContext.sql('select * from Orders \
+order by order_id')
+q.coalesce(1).write.orc('/user/pvaithee07/problem8/solution2')
+
+
+Problem 9 -
+
+h1b=sc.textFile('/public/h1b/h1b_data').filter(lambda x: x.split("\0")[1]!='CASE_STATUS')
+
+code='org.apache.hadoop.io.compress.SnappyCodec' ---- > the quotes is important
+
+
+h1b.saveAsTextFile('/user/pvaithee07/problem9/solution',code)
+
+
+
+Problem 10 - 
+
+
+h1b=sc.textFile('/public/h1b/h1b_data').filter(lambda x: x.split("\0")[1]!='CASE_STATUS')
+h1b_rdd=h1b.filter(lambda x: x.split("\0")[7] != 'NA').map(lambda x: (int(x.split("\0")[0]), int(x.split("\0")[7])) )
+
+from pyspark import Row
+h1b_df=h1b_rdd.map(lambda x: Row(Id=x[0], year=x[1])).toDF()
+h1b_df.registerTempTable('LCA')
+
+q=sqlContext.sql('select Year, count(Id) Number_of_lca from \
+LCA group by year')
+
+q.rdd.map(lambda x: str(x[0]) + '\0' + str(x[1])).coalesce(1).saveAsTextFile('/user/pvaithee07/problem10/solution2') 
+
+
+Problem 11 -
+
+
+h1b=sc.textFile('/public/h1b/h1b_data').filter(lambda x: x.split("\0")[1]!='CASE_STATUS')
+h1b_rdd=h1b.filter(lambda x: x.split("\0")[7] != 'NA').map(lambda x: (x.split("\0")[1], int(x.split("\0")[7])))
+
+from pyspark import Row
+h1b_df=h1b_rdd.map(lambda x: Row(Status=x[0], year=x[1])).toDF()
+h1b_df.registerTempTable('LCA')
+
+q=sqlContext.sql('select year, Status, count(*) ct from \
+LCA group by year, Status')
+
+
+sqlContext.setConf('spark.sql.shuffle.partitions','1')
+q.write.json('/user/pvaithee07/problem11/solution')
+
+
+
+Problem 12 - 
+
+h1b=sc.textFile('/public/h1b/h1b_data').filter(lambda x: x.split("\0")[1]!='CASE_STATUS')
+h1b_rdd=h1b.filter(lambda x: x.split("\0")[7] == '2016').map(lambda x: (x.split("\0")[1], x.split("\0")[2]))
+
+from pyspark import Row
+h1b_df=h1b_rdd.map(lambda x: Row(Status=x[0], Employer_name=x[1])).toDF()
+h1b_df.registerTempTable('LCA')
+
+q=sqlContext.sql('select Employer_name, count(*) lca_count from LCA \
+where Status in ('WITHDRAWN', 'CERTIFIED-WITHDRAWN', 'DENIED') \ 
+group by Employer_name \
+order by lca_count desc \
+fetch first 5 rows')
+
+q.write.parquet('/user/pvaithee07/problem12/solution')
+
+
+Problem 13 - 
+
+
+h1b=sc.textFile('/public/h1b/h1b_data_noheader').filter(lambda x: x.split("\0")[7] != 'NA').filter(lambda x: x.split("\0")[6]!= 'NA') \
+.map(lambda x: (int(x.split("\0")[0]), x.split("\0")[1], x.split("\0")[2], x.split("\0")[3], x.split("\0")[4], x.split("\0")[5], \
+float(x.split("\0")[6]), int(x.split("\0")[7]), x.split("\0")[8], x.split("\0")[9], x.split("\0")[10]) )
+
+from pyspark import Row
+h1b_df=h1b.map(lambda x: Row(Id=x[0],case_status=x[1], Employer_name=x[2], soc_name=x[3],job_title=x[4],Full_time=x[5], \
+previaling_wage=x[6],year=x[7], worksite=x[8],longitude=x[9], latitude=x[10])).toDF()
+
+h1b_df.registerTempTable('h1b_table')
+
+sqlContext.sql('CREATE DATABASE PVAITHEE07')
+sqlContext.sql('USE PVAITHEE07')
+sqlContext.sql('CREATE TABLE h1b_new \
+(employer_name string, full_time string, ID int, case_status string, \ 
+job_title string, latitude string, longitude string, prevailing_wage double, soc_name string, \
+worksite string, year int) \
+stored as textfile' )
+
+h1b_query=sqlContext.sql('select * from h1b_table')
+
+h1b_query.insertInto('pvaithee07.h1b_new')
+
+
+
+Problem 16 - 
+
+ny=sc.textFile('/public/nyse').map(lambda x: (x.split(',')[0], int(x.split(',')[1]), float(x.split(',')[2]), float(x.split(',')[3]), \
+float(x.split(',')[4]), float(x.split(',')[5]), int(x.split(',')[6]) ) )
+
+from pyspark import Row
+
+nydf=ny.map(lambda x: Row(stockticker=x[0], transactiondate=x[1], openprice=x[2], \
+highprice=x[3], lowprice=x[4], closeprice=x[5], volume=x[6])).toDF()
+
+nydf.registerTempTable('nyse_data')
+
+ct=sqlContext.sql('select * from nyse_data \
+order by transactiondate asc, volume desc')
+
+ct.rdd.map(lambda x: x[0] + ':' + str(x[1]) + ':' + str(x[2]) + ':' + str(x[3]) + ':' + str(x[4]) \
++ ':' + str(x[5]) + ':' + str(x[6]) ).coalesce(10).saveAsTextFile('/user/pvaithee07/problem16/solution')
+
+
+ct.rdd.map(lambda x: x[0] + ':' +, str(x[1]), + ':' + ,str(x[2]) + ':' + str(x[3]) + ':' + str(x[4]) \
+
+ct.rdd.map(lambda x: x[0] + ':' + str(x[1]))
+
+
+sqlContext.setConf('spark.sql.shuffle.partitions','2')
+
+
+
+Problem 17 - 
+
+--packages com.databricks:spark-avro_2.10:2.0.1
+
+ny=sc.textFile('/public/nyse')
+ny_sym=sc.textFile('/public/nyse_symbols')
+
+ny_map=ny.map(lambda x: (x.split(',')[0], x.split(',')[1]) ) 
+
+nyse_map=ny_sym.map(lambda x: (x.split('\t')[0], x.split('\t')[1]))
+
+from pyspark import Row
+
+ny_df=ny_map.map(lambda x: Row(sym=x[0])).toDF()
+ny_df.registerTempTable('NYSE')
+
+nysm_df=nyse_map.map(lambda x: Row(sym=x[0], desc=x[1])).toDF()
+nysm_df.registerTempTable('NY_SYM')
+
+q=sqlContext.sql('select ny.sym from NYSE ny join NY_SYM nysm \
+on ny.sym = nysm.sym \
+where nysm.desc is null')
+
+q.write.format('com.databricks.spark.avro').save('/user/pvaithee07/nyse_json')

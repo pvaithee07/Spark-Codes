@@ -1,0 +1,79 @@
+
+Yarn-client vs Yarn-Master vs yarn-local
+-----------------------------------------
+
+So in spark you have two different components. There is the driver and the workers. In yarn-cluster mode the driver is running remotely on a data node and the workers are running on separate data nodes. In yarn-client mode the driver is on the machine that started the job and the workers are on the data nodes. In local mode the driver and workers are on the machine that started the job.
+
+When you run .collect() the data from the worker nodes get pulled into the driver. It's basically where the final bit of processing happens.
+
+For my self i have found yarn-cluster mode to be better when i'm at home on the vpn, but yarn-client mode is better when i'm running code from within the data center.
+
+Yarn-client mode also means you tie up one less worker node for the driver.
+
+
+/etc/spark/conf - in this vi.spark.env.sh --> this has the default allocation for spark
+----------------
+
+
+SparkConf and SparkContext - available from pyspark
+--------------------------
+
+from pyspark import SparkConf, SparkContext
+
+conf=SparkConf().setMaster('yarn-client').setAppname('testing').set('spark.ui.port','11111')
+sc=SparkContext(conf=conf)
+
+
+Spark-Submit
+-------------
+
+
+
+
+Persirt/Cache - 
+
+StorageLevel class contains persist/cache
+
+from pyspark import StorageLevel
+orders.persist()
+
+
+
+Accumulator  - orderaccum = sc.accumulator(0)
+------------
+
+to add value to accumulator variable 
+orderaccum = sc.accumulator(0) --> defining a variable as accumulator
+orderaccum = orderaccum.add(1) --> incrementing the variable by 1
+
+
+During Transformation using Map or doing Join - 
+------------------------------------------------
+
+Rdd is of type unicode which is string. From this, using split(), we will convert to desired format. But if the integer fields are present, it has to be casted by int() to avoid the field to be in string.
+
+for ex -  
+
+Rdd = u'1, 12133, name, product'
+rdd.map(lambda x: (x.split(',')[0], x,split(',')[2]) )
+
+the o/p of this will be (u'1', u'name') --> here the integer 1 is transformed as string 1 which is not correct. this may not help when comparing the same field with other tuple of sorting. for this we will have to convert to Int
+
+rdd.map(lambda x: (int(x.split(',')[0]), x,split(',')[2]) ) 
+
+the o/p will be (1, u'name') -- this is the right way since sorting and comparing the integer with integer will give correct result
+
+
+concatenating different data types will not work. TO avoid this, we need to type cast
+
+rec[0] + rec [1] ---- if both are different data types, this might not work. to avoid this, type cast any of the field
+
+rec[0] + str(rec[1])
+
+
+
+toDebugString() - will print the DAG
+
+L=(1, 'TEST')
+d=dict(L) will conver the list L into Dict with key, Value pairs
+

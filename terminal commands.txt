@@ -1,0 +1,137 @@
+	dfs -ls ltr 
+	hadoop -ls ltr 
+both are same. This list the directory in hdfs or hadoop database.
+
+pwd - give the current home directory location
+
+creating a file and savinf from terminal - 
+	mkdir -p 'path' - this creates a directory in the path specified. usually from the above home directory we will add a folder to create.
+
+	set -o vi - sets the editor
+	vi name.txt - creates and opens the editor with name.txt as file name.
+	
+
+
+dfs -ls /user/hive/warehouse - hadoop command from Hive CLI.
+the path /user/hive/warehouse is hdfs directory.
+
+hivesite.xml - this is the path where hive parameters are stored.
+cd /etc/hive/conf
+
+by default, managed tables or internal tables are stored in this directory - '/user/hive/warehouse'
+
+hadoop fs -copyFromLocal 'local file name' 'hdfs directory'. 
+
+loading a table from another table - 
+
+insert into Target_table select * from Source_table
+
+if the target table is partitioned - insert into Target_table partition(column_name) select * from source_table
+
+
+echo $HIVE_HOME - Hive directory location.
+
+cat file_name - view the contents of file.
+head file_name = lists the contents of top 10 records of the file.
+head -n 3 file_name = lists the top 3 records of the file.
+
+locate 'file_name' - this will locate the file_name in Linux
+
+	
+set hive.cli.print.header = true;
+
+
+show create table tbl_name --> this command will show the create table command fully with all the options. this will help understand the default commands/properties as well.
+
+dynamic partition - 
+insert into tbl_name partition (col1) select col2, col3, col1 from src_tbl;
+
+note - the partitioned column should come in end of select query and in same order as defined in partitioned by
+
+static partition - 
+
+insert into tbl_name partition (col1 = 'red')
+select col2, col3 from src_tbl where col1 = 'red';
+
+note - the partitioned column cannot be in select query, should be in where clause.
+
+
+load data inpath '/vaithee/ls2014ed.tsv' into table elect_tbl;
+hadoop fs -copyFromLocal 'ls2014ed.tsv' '/vaithee';
+
+
+create table elect_tbl (state string, const string, name string, sex string, age int, category string, party_name string, part_sym string, gen_count int, postal int, total int, pct_total float, 
+pct_poll float, total_voter int)
+clustered by (state) into 5 buckets
+row format delimited fields terminated by '\t'
+stored as textfile;
+
+select count (Distinct const) from elect_copy; - Gives count of distinct const
+select state, count(distinct const) from elect_copy group by state - gives the state and count of distinct constituency gropued by state.
+select state, const, count(name) from elect_copy group by state, const; - gives the state, const and the no of canditates grouped by state and const.
+
+select dis_name u,  count(p.own_id) ct from user u join post p
+where u.id = p.own_id
+group by dis_name
+order by ct desc
+limit 1;
+
+select count(u.id) from users u join posts p
+where u.id = p.id and u.loc = 'india';
+
+select count(p.ans_count), count(p.comm_count), count(u.id), u.loc from users u join posts p  
+where u.id = p.id and loc = 'India'
+group by loc;
+
+
+
+
+ssh - command used from linux/unix Virtual machine for transferring files and executing commands from remote.
+
+ssh root@192.168.163.129 -- this will connect to root@sandbox.
+
+sudo su -hdfs
+
+hadoop fs -put localfile.txt /user/hdfs  --> copies the file present in local(linux os) to HDFS directory. same as -copyFromLocal command
+
+hadoop fs - once this is used, it will list all the available hadoop commands.
+
+/ - this will give root file system dir in linux. root meaning home.
+jar tvf 'jar path name' --> this will show the list of classes present in that jar file.
+
+mysql -u root
+
+
+touch filename - this command will create the filename from unix
+vi filename - opens the filename
+hadoop fs -ls / - this will list the files in the root (/ represent root)
+ls -ltr core-site.xml - From unix, this.xml file has the hadoop config files. 
+			fs.defaultFS - this is the property that stores where the default file store location is
+
+
+hadoop fs -mkdir pathname--> this creates the directory of the path mentioned
+ex - hadoop fs -mkdir /user/root/dir1 --> creates dir1 in root dir. It expects root to be present.
+
+but if hadoop fs -mkdir -p /user/root/dir1/dir2 --> this will create the directories if not present. for ex, if root is present but not dir1 and dir2, it will create the structure. -p is needed in the command line.
+
+hadoop fs -mkdir /user/root/t{1..10} --> this will create t1, t2... t10 - creating multiple directories.
+
+command to find the count of records from linux --
+   hadoop fs -cat /user/root/dir/path*|wc -l
+	|wc - wc stands for word count and each row will be counted as 1. 
+	this command will read all the records in path* and give the total count.
+	this command has to be executed outside pig/hive. only from linux terminal.
+
+
+finding for some file - 
+	find / -name "*piggybank.jar" -- this will look for a file named piggybank.jar
+
+
+/.start-all-services.sh --- to start all the services in hdp environment.
+
+whoami -- will give the user of the terminal.
+
+sudo su hdfs --- this will give the control to hdfs. su stands for super user.
+ in exam if they ask to connect to user, from terminal sudo su username will connect to that user
+
+

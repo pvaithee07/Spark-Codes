@@ -1,0 +1,97 @@
+
+RDD - 
+======
+
+Read Text ---- sc.textFile('path-name') --> this creates RDD from the file given.
+
+Read JSON ---- From pyspark, cannot directly read JSON. Instead, use dataframe to read, register as table and then convert.
+          ---- df=sqlContext.jsonfile('/path/name')
+          ---- df.registerTempTable('examp')
+          ---- df_data = sqlContext.sql('select * from examp').write.json('/path
+
+
+Read CSV - can use sc.textFile( )
+
+Read Paraquet 
+
+Read from HDFS = 
+
+Read from local file system ----   order = open('full/path/nme').read().splitlines() --> this is python API to read data from local FS.
+                            ----   order_rdd = sc.parallelize(order) -> this statement creates an RDD.
+	
+
+
+Save Text  --- rdd.saveAsTextFile('path/name', compressionCodecClass)
+           --- rdd.coalesce(2).saveAsTextFile('path/name')
+	   --- 
+
+           compression codec is none by default. If needed, we can assign and use like below
+           ---- codec = "org.apache.hadoop.io.compress.GzipCodec"
+           ---- rdd.saveAsTextFile('path/name', codec)
+
+
+Save JSON
+Save CSV
+Save Paraquet
+
+Saving RDD to sequence file - 
+
+rdd.map(lambda x: (None, x)).saveAsSequenceFile('/path')
+
+Bascially we will have to convert the rdd to (key, value) and then write to sequence file
+
+
+DataFrame - 
+============
+
+Read Text
+Read JSON     ---- df = sqlContext.read.load('path-name', format='json')
+		 or  df = sqlContext.read.json('/path/nae')			
+
+Read CSV      ---- sqlContext.read.format('csv').options(header='true',inferSchema='true').load('path/file-name')
+
+Read Paraquet ---- df = sqlContext.read.load('path/file-name') - default its paraquet
+
+
+Save Text      ---- df.write.text('path/file-name') -> limitation is, the dataframe should have only 1 column.
+Save JSON      ---- df.write.json('path/file-name')
+Save CSV
+Save Paraquet  ---- df.write.save('path/file-name')
+
+Avro Write     ---- 
+		df.write.format('com.databricks.spark.avro").save('/user/pvaithee07/solution5/op_avro')
+		This write works when importing spark with --package com.databricks:spark-avro_2.10:2.0.1 while launching pyspark
+
+
+orc write - ----
+ 		df.write.format(
+
+
+df.write.json, df.write.orc, df.write.parquet -- supported formats
+
+df.write.format('json').save -- this is also similar to above, except the format has to be changed as needed.
+
+to write in csv or in text --- convert dataframe to rdd and then use saveAsTextFile to save as CSV
+
+df.rdd.map(lambda x: (x[0], x[1]) ).saveAsTextFile('/path')
+
+
+df.write.save	
+
+
+writing dataframe to hive table --
+
+df.insertInto(tablename, overwrite=false)
+
+
+
+vi editor commands - 
+
+insert - Esc, i
+append - Esc, a
+:q - quit
+:q! - quit without save
+:w - write
+:wq - write and quit
+
+

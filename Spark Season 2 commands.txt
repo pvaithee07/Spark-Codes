@@ -1,0 +1,441 @@
+
+AVRO Data - /user/hive/warehouse/retail_db.db
+Test Data - /public/retail_db
+          - /user/dgadiraju/retail_db
+
+Local file system - /data/retail_db/
+
+
+Certification - spark excercises
+
+sc.stop()
+
+from pyspark import SparkConf, SparkContext
+
+conf = SparkConf().setMaster('yarn-client').setAppName('testing')
+SC = SparkContext(conf=conf)
+
+
+sc.first()
+for i in sc.take(10):
+	print(i)
+
+to reduce the number of executors jobs running, below command - 
+sqlContext.setConf('spark.sql.shuffle.partitions', '2')
+
+
+Customer Table
+------------------
+
+customer_id             int                                         
+customer_fname          varchar(45)                                 
+customer_lname          varchar(45)                                 
+customer_email          varchar(45)                                 
+customer_password       varchar(255)                                
+customer_street         varchar(255)                                
+customer_city           varchar(45)                                 
+customer_state          varchar(45)                                 
+customer_zipcode        varchar(45) 
+
+Order Item
+-----------
+
+order_item_id           int                                         
+order_item_order_id     int                                         
+order_item_product_id   int                                         
+order_item_quantity     int                                         
+order_item_subtotal     float                                       
+order_item_product_price        float 
+
+Orders
+--------
+
+order_id                int                                         
+order_date              string                                      
+order_cust_id           int                                         
+order_status            string  
+
+
+
+
+Excercie 06 - 
+==================
+
+order=sc.textFile('/apps/hive/warehouse/vaithee.db/orders')
+order_fil=order.map(lambda x: (int(x.split('\x01')[0]), x.split('\x01')[1] , int(x.split('\x01')[2]) ))
+
+try - 
+order_fil=order.map(lambda x: (int(x.split('\x01')[0]), substr(x.split('\x01')[1],1,10) , int(x.split('\x01')[2]) ))
+
+from pyspark import Row
+
+order_df=order_fil.map(lambda x: Row( order_id=x[0], order_date=x[1], order_cust_id=x[2]) ).toDF()
+order_df.registerTempTable('orders')
+
+order_item=sc.textFile('/apps/hive/warehouse/vaithee.db/order_items')
+order_item_fil=order_item.map(lambda x: (int(x.split('\x01')[1]), float(x.split('\x01')[4]) ))
+
+order_item_df=order_item_fil.map(lambda x: Row( order_id = x[0], order_sub_tot= x[1]) ).toDF()
+order_item_df.registerTempTable('order_items')
+
+
+sqlContext.setConf("spark.sql.shuffle.partitions", "2")
+
+test=sqlContext.sql( ' \
+select o.order_cust_id, o.order_date, oi.order_sub_tot \
+from orders o join order_items oi \
+where o.order_id = oi.order_id \
+group by o.order_cust_id, o.order_date, oi.order_sub_tot  \
+order by oi.order_sub_tot desc, o.order_date Desc \
+limit 25'
+)
+
+
+orderjitem = order_fil.join(order_item_fil)
+
+convert to dataframe
+then groupby cust_id, date and order-id
+
+
+
+
+cust=sc.textFile('/apps/hive/warehouse/vaithee.db/customers')
+cust_fil=cust.map(lambda x: (int(x.split('\x01')[0]), (x.split('\x01')[1], x.split('\x01')[2]) )) 
+
+
+Exercise 3 - 
+===============
+
+Get top 3 crime types based on number of incidents in RESIDENCE area using “Location Description”
+
+Crime Data - /public/crime/csv
+
+using API - 
+------------
+
+crime=sc.textFile('/public/crime/csv/crime_data.csv')
+crime_data=crime.filter(lambda x: (x.split(',')[7] == 'RESIDENCE')).map(lambda x: (x.split(',')[5]))
+crime_group=crime_data.map(lambda x: (x,1) ).reduceByKey(lambda x, y: x + y)
+
+
+crime_final = crime_group.takeOrdered(3,key=lambda x: -x[1]) ---- > new command.... to order the records by descending and take only top 3 records
+
+crime_df=sc.parallelize(crime_final).toDF(['type','count'])
+crime_df.coalesce(1).write.json('/user/pvaithee07/solution3/res_API') 
+
+
+Using DF - 
+-----------
+
+crime=sc.textFile('/public/crime/csv/crime_data.csv')
+crime_data=crime.filter(lambda x: (x.split(',')[7] == 'RESIDENCE')).map(lambda x: (x.split(',')[5]))
+
+from pyspark import Row
+crime_df=crime_data.map(lambda x: Row(type=x)).toDF()
+crime_df.registerTempTable('crime')
+
+crime_top=sqlContext.sql('select type, count(*) ct from crime \
+group by type \
+order by ct desc \
+limit 3')
+
+crime_top.coalesce(1).write.json(' ' )
+
+
+Exercise 2 -
+===============
+
+customers who have not placed any orders, sorted by customer_lname and then customer_fname
+
+
+order data - /data/retail_db/orders
+Customer data - /data/retail_db/customers
+
+Using API -
+
+order=open('/data/retail_db/orders/part-00000').read().splitlines()
+orderRdd=sc.parallelize(order).map(lambda x: (int(x.split(',')[2]) , (x.split(',')[0]) ) )
+
+ for i in orderRdd.take(10):
+     print(i)
+
+cust=open('/data/retail_db/customers/part-00000').read().splitlines()
+custRdd=sc.parallelize(cust).map(lambda x: (int(x.split(',')[0]), (x.split(',')[1], x.split(',')[2])))
+
+orderjoincust=orderRdd.rightOuterJoin(custRdd) --> this gives (1753, ('41247', ('Sandra', 'Smith')))
+
+orderjoinfilter=orderjoincust.filter(lambda x: x[1][0] == None)
+
+custnoorder=orderjoinfilter.map(lambda x: (x[1][1][0], x[1][1][1]) ).sortByKey()
+custnoorder.saveAsTextFile('/user/pvaithee07/solution2/noorder')
+
+
+**** when going to join, integer fields should be casted to INT and comapred with INT to get correct results.
+
+
+Using DF - 
+ 
+order=open('/data/retail_db/orders/part-00000').read().splitlines()
+orderRdd=sc.parallelize(order).map(lambda x: (int(x.split(',')[2]) , (x.split(',')[0]) ) )
+
+cust=open('/data/retail_db/customers/part-00000').read().splitlines()
+custRdd=sc.parallelize(cust).map(lambda x: (int(x.split(',')[0]), (x.split(',')[1], x.split(',')[2])))
+
+from pyspark import Row
+
+orderdf=orderRdd.map(lambda x: Row(cust_id=x[0], order_id=x[1]) ).toDF()
+custdf=custRdd.map(lambda x: Row(cust_id=x[0], cust_fname=x[1][0], cust_lname=x[1][1]) ).toDF()
+
+orderdf.registerTempTable('orders')
+custdf.registerTempTable('customers')
+
+custnoorder = sqlContext.sql('select c.cust_fname, c.cust_lname, o.order_id from customers c left outer join orders o \
+on c.cust_id = o.cust_id \
+where o.order_id = null
+order by c.cust_fname, c.cust_lname' )
+
+custnoorder.rdd.save
+
+
+
+
+Excercise 04 -
+================
+
+Copy the data from local file to Hadoop
+
+Hadoop fs -copyFromLocal '/data/nyse' '/user/pvaithee07'
+
+nyse=sc.textFile('/user/pvaithee07/nyse')
+
+from pyspark import Row
+
+nyse_map=nyse.map(lambda x: (x.split(',')[0], x.split(',')[1], float(x.split(',')[2]), float(x.split(',')[3]), float(x.split(',')[4]), \
+float(x.split(',')[5]), int(x.split(',')[6]) )). \
+map(lambda x: Row(stc=x[0], txdat=x[1], oprice=x[2], hprice=x[3], lprice=x[4], clprice=x[5], volume=x[6]) ).toDF()
+
+nyse_map.coalesce(3).write.parquet('/user/pvaithee07/solution4/op')
+
+
+
+
+Exercise 05 - 
+================
+
+Word Count
+
+pyspark --master yarn --num-executors 10 --executor-memory 3G --executor-cores 2 --packages com.databricks:spark-avro_2.10:2.0.1
+
+word=sc.textFile('/public/randomtextwriter').flatMap(lambda x: x.split(' ')).map(lambda x: (x, 1) ).reduceByKey((lambda x,y : x + y), 8)
+
+from pyspark import Row 
+
+word_df=word.map(lambda x: Row(word=x[0],count=x[1]) ).toDF()
+
+
+word_df.write.format("com.databricks.spark.avro").save('/user/pvaithee07/solution5/op_avro')
+
+
+
+Exercise 01 - 
+================
+
+Monthly crime count by type
+
+crime=sc.textFile('/public/crime/csv/crime_data.csv')
+
+crime_filter=crime.filter(lambda x: x.split(',')[0] != 'ID')
+crime_map=crime_filter.map(lambda x: (mo(x.split(',')[2]), x.split(',')[5]) )
+
+
+def mo(dat):
+   dt_new=dat.split(' ')[0]
+   dt_mo=dt_new.split('/')[0]
+   dt_yr=dt_new.split('/')[2]
+   dt_up=dt_yr + dt_mo	
+   return dt_up	
+
+
+from pyspark import Row
+
+crime_df=crime_map.map(lambda x: Row(month=x[0], type=x[1]) ).toDF()
+crime_df.show()
+crime_df.registerTempTable('crimes')
+
+crime_grp=sqlContext.sql('select month, count(type) ct, type from crimes group by month, type order by month asc, ct desc')
+
+crime_rdd=crime_grp.rdd.map(lambda x: str(x[0]) + '\t' + str(x[1]) + '\t' + str(x[2])).coalesce(1) \
+.saveAsTextFile('/user/pvaithee07/solution1/crimeop', compressionCodecClass='org.apache.hadoop.io.compress.GzipCodec')
+
+
+
+
+======================================
+
+get count of completed / closed orders using accumulators
+
+
+
+order=sc.textFile('/apps/hive/warehouse/vaithee.db/orders')
+order_map=order.map(lambda x: x.split('\x01')[3]).distinct()
+for i in order_map.collect():
+	print(i)
+
+
+order_fil = order.filter(lambda x: x.split('\x01')[3]=='CLOSED' or x.split('\x01')[3]=='COMPLETE') 
+for i in order_fil.take(10):
+	print(i)
+
+
+closacc = sc.accumulator(0)
+complcc = sc.accumulator(0)
+
+for i in order_fil.collect():
+   if i.split('\x01')[3]=='CLOSED':
+	closacc.add(1)
+   else:
+ 	complcc.add(1)
+
+closacc.value
+complcc.value
+
+
+===========================================
+
+
+spark-submit
+-------------
+
+spark-submit --master yarn \
+--class 
+.jars
+
+
+pyspark --master yarn --py-files
+
+
+/etc/spark/conf --> vi spark-env.sh
+
+
+from pyspark import SparkContext,SparkConf
+conf=SparkConf().setMaster('yarn-client').setAppName('test')
+sc=SparkContext(conf=conf)
+
+
+conf=SparkConf().setMaster('yarn-client').setAppName('test').set('num-executors','2').set('executor-memory', '2G')
+sc=SparkContext(conf=conf)
+
+Another method (pyspark shell) - 
+
+move to //bin folder. From this type pyspark --master yarn -- etc
+
+ ./bin/pyspark --master local[4] --py-files code.py
+
+From spark-submit ---
+
+spark-submit --master yarn --py-files /path/name --num-executors 2 --executor-memory 2G
+
+
+
+from pyspark.sql import SQLContext
+sqlContext = SQLContext(sc)
+
+==========================
+
+Broadcast -
+
+For broadcast, a Dict has to be created. Dict will work only for data from local file system, not on RDD. 
+
+
+prod=open('/data/retail_db/products/part-00000').read().splitlines()
+prod_map=dict(map(lambda x: (int(x.split(',')[0]), x.split(',')[2]) , prod))
+
+prodbv = sc.broadcast(prod_map)
+prodbv.value[1340] ---> will give value
+
+order_item=open('/data/retail_db/order_items/part-00000').read().splitlines()
+ordersRdd=sc.parallelize(order_item)
+ordermap=ordersRdd.map(lambda x: (int(x.split(',')[0]),int(x.split(',')[1]), int(x.split(',')[2]) ))
+
+orderjoinprod = ordermap.map(lambda x: (x[0], x[1], prodbv.value[x[2]]) )
+
+
+
+===========================
+
+Exercise 6 - 
+
+top 5 customers by revenue by month
+
+order=sc.textFile('/apps/hive/warehouse/vaithee.db/orders')
+order_fil=order.map(lambda x: (int(x.split('\x01')[0]), x.split('\x01')[1] , int(x.split('\x01')[2]) ))
+
+from pyspark import Row
+order_df=order_fil.map(lambda x: Row( order_id=x[0], order_date=x[1], order_cust_id=x[2]) ).toDF()
+order_df.registerTempTable('orders')
+
+order_item=sc.textFile('/apps/hive/warehouse/vaithee.db/order_items')
+order_item_fil=order_item.map(lambda x: (int(x.split('\x01')[1]), float(x.split('\x01')[4]) ))
+
+order_item_df=order_item_fil.map(lambda x: Row( order_item_order_id = x[0], order_sub_tot= x[1]) ).toDF()
+order_item_df.registerTempTable('order_items')
+
+
+cust=sc.textFile('/public/retail_db/customers/part-00000')
+cust_fil=cust.map(lambda x: (int(x.split(',')[0]), x.split(',')[1], x.split(',')[2] )) 
+
+cust_fil_df=cust_fil.map(lambda x: Row(cust_id= x[0], cust_fname=x[1], cust_lname=x[2])).toDF()
+cust_fil_df.registerTempTable('customers')
+
+
+count=sqlContext.sql\
+('select a.odate, a.revenue, a.order_cust_id from \
+( select o.order_cust_id, cast(concat(substr(o.order_date,1,4),substr(o.order_date,6,2)) as int) odate, \
+sum(oi.order_sub_tot) revenue, \
+rank() over (partition by cast(concat(substr(o.order_date,1,4), substr(o.order_date,6,2)) as int) order by \
+sum(oi.order_sub_tot) desc) ranker \
+from orders o join order_items oi  \
+on o.order_id = oi.order_item_order_id  \
+join customers c \
+on o.order_cust_id = c.cust_id \
+group by o.order_cust_id, cast(concat(substr(o.order_date,1,4),substr(o.order_date,6,2)) as int) \
+order by odate asc, revenue desc) a \
+where a.ranker<= 5')
+
+countdf=count.registerTempTable('Result1')
+
+result=sqlContext.sql('select r.odate, r.revenue, c.* from Result1 r join \
+customers c on r.order_cust_id = c.cust_id \
+order by r.odate asc, r.revenue desc')
+
+resultdf=result.registerTempTable('Final')
+
+
+sqlContext.sql('create table top5_customer as \
+select * from Final')
+ 
+
+sqlContext.sql('select * from top5_customer limit 100')
+
+
+-------------------
+
+persist / cache
+=================
+
+from pyspark import StorageLevel
+
+rdd.cache() is same as rdd.persist(StorageLevel.MEMORY_ONLY) or rdd.persist()
+
+persist has multiple options to be used. but for cache, the only value is MEMORY_ONLY
+
+rdd.unpersist() -- this will remove the rdd from memory
+
+
+-------------------
+
+How to read sequence files and convert to rdd in pyspark?
+
+compressed files can be read directly using textFile API
+
+try sc.sequenceFile

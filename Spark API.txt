@@ -1,0 +1,31 @@
+
+transformation - 
+
+map() - Apply a function to each element in the RDD and return an RDD of the result.
+flatmap() - Apply a function to each element in the RDD and return an RDD of the contents of the iterators returned. Often used to extract words.
+reduce()
+fold() - 
+filter() - Return an RDD consisting of only elements that pass the condition passed to filter().
+distinct() - Remove duplicates.
+sample() - Sample an RDD, with or without replacement.sample(withReplacement, fraction, [seed]) 
+
+union()
+intersection()
+subtract()
+cartesian()
+
+
+
+Action - 
+collect() - Return all elements from the RDD.
+count()
+countByValue()
+take()
+top()
+takeOrdered(num)(ordering)
+takeSample()
+reduce()
+fold(zero)(func)
+aggregate()
+foreach()
+

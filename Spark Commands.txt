@@ -1,0 +1,708 @@
+Spark User Guide - https://spark.apache.org/docs/1.6.0/programming-guide.html
+Spark SQL - https://spark.apache.org/docs/1.6.0/sql-programming-guide.html
+
+SPark SQL - http://spark.apache.org/docs/latest/sql-programming-guide.html#creating-dataframes
+
+
+/apps/hive/warehouse/zz_db.db/orders/part-00000
+/apps/hive/warehouse/vishnu_retail_db.db/order_items/part-00000
+
+
+
+for using broadcast variables, we need to have a variable that is in DICT format, meaning, key: value pairs. we need to conver the variable to a DICT by using DICT method.
+Broadcast is manily used to do a lookup instead of joining. Usually for a large dataset
+
+
+each element in RDD is string, type is unicode
+
+list = [ ]
+set = ( [ ] )
+dict = { }
+
+
+tuple = ( )
+
+spark certification notes - https://www.linkedin.com/pulse/completing-hdp-certified-apache-spark-developer-anand-vasantharajan/
+
+
+**********!!!!!!!!!!!!!!!!!!!!######################+++++++++++++++++++++==============================************************
+
+get the count of orders that are made after 2014-07-01
+
+get the no of records for each day - 
+	ord=sc.textFile('/apps/hive/warehouse/zz_db.db/orders/part-00000')
+	ord_map=ord.map(lambda x: (x.split(',')[1], 1))
+	ord_red=ord_map.reduceByKey(lambda x, y: x + y)
+
+count of completed records - 
+	ord_map=ord.filter(lambda x: x.split(',')[3] == 'COMPLETE' or x.split(',')[3] == 'CLOSED')
+	ord_map.count()
+
+
+Join ooder and order items based on order-id. fetch ord_id, 
+	ord=sc.textFile('/apps/hive/warehouse/zz_db.db/orders/part-00000')
+	ord_map=ord.map(lambda x: (int(x.split(',')[0]), (x.split(',')[1], x.split(',')[3])))
+	ord_item=sc.textFile('/apps/hive/warehouse/vishnu_retail_db.db/order_items/part-00000')
+	ord_item_map=ord_item.map(lambda x: (int(x.split(',')[1]), (int(x.split(',')[0]), float(x.split(',')[5]))))
+	ord_item_map.first()
+	ord_oijoin = ord_map.join(ord_item_map)
+	ord_oijoin.first()
+
+	ord_oijoin_map=ord_oijoin.map(lambda x: (x[0],x[1][1]))
+	ord_oijoin_map.first()
+
+
+
+create data frame from the output of ord_oijoin -
+	
+	ord_oijoin_sp=ord_oijoin.map(lambda x: (x[0], x[1][0][0],x[1][0][1]))
+	ord_oijoin_sp.first()
+	from pyspark.sql import Row
+	ord_oijoin_sp_df=ord_oijoin_sp.map(lambda x: Row(order_id=x[0], order_date=x[1], order_status=x[2])).toDF()
+	ord_oijoin_sp_df.show()	
+
+	
+From the dataframe, register to temp table and do sparkql - 
+
+
+	
+
+
+use case to identify the count, use accumulators and differentiate without using accumulators - 
+
+
+
+
+
+Crime data Exercise -
+----------------------
+
+/public/crime/csv/crime_data.csv
+
+
+crime=sc.textFile('/public/crime/csv/crime_data.csv')
+crime_nohead=crime.filter(lambda x: x.split(',')[0]!='ID')
+
+def conv_dt(x):
+    rec=x.split(',')[2]
+    rec_mon=rec.split('/')[0]
+    rec_yr=rec.split('/')[2]
+    rec_yr_u=rec_yr.split(' ')[0]
+    req_date=rec_yr_u + '/' + rec_mon   	
+    return req_date
+
+from pyspark import Row
+
+crime_nohead_map=crime_nohead.map(lambda x: (conv_dt(x), x.split(',')[5]))
+crime_nohead_map_df=crime_nohead_map.map(lambda x: Row(date=x[0], type=x[1])).toDF()
+crime_nohead_map_df.registerTempTable('crime_data')
+crime_data = sqlContext.sql('select date, type, count(*) ct from crime_data group by date, type order by date asc, ct desc')
+crime_data.show()
+
+crime_data_rdd=crime_data.map(lambda x: x[0] + ('\t') + x[1]).saveAsTextFile('/user/pvaithee07/solutions/crime_res',compressionCodecClass="org.apache.hadoop.
+io.compress.GzipCodec")
+
+to write a dataframe to file ---- crime_data.write.text('/user/pvaithee07/solutions/crime_res') -- this will save in text format. but to do compression, have to do from RDD only.
+
+
+from pyspark import Row
+
+crime_nohead_map=crime_nohead.map(lambda x: (x.split(',')[2],x.split(',')[5]))
+crime_nohead_map_df=crime_nohead_map.map(lambda x: Row(date=x[0], type=x[1])).toDF()
+crime_nohead_map_df.registerTempTable('crime_data')
+crime_data = sqlContext.sql('select date, type, count(*) ct from crime_data group by date, type order by date, type, ct Desc')
+crime_data.show()
+	
+
+
+Word Count Exercise - 
+----------------------
+
+/public/randomtextwriter
+
+pyspark --help
+
+pyspark --master yarn --conf spark.ui.port=12345 --num-executors 10 --executor-memory 3G  --total-executor-cores 20
+
+
+wc=sc.textFile('/public/randomtextwriter')
+wc_map=wc.flatMap(lambda x: x.split(' ')).map(lambda x: (x,1))
+wc_count=wc_map.reduceByKey((lambda x, y: x + y),8) ---> the 8 is to define the no of o/p files from this task.
+
+from pyspark import Row
+wc_count_df = wc_count.map(lambda x: Row(word=x[0], count=x[1])).toDF()
+wc_count_df.write.save('/user/pvaithee07/solutions/wtocount')
+wc_count_df.write.format("com.databricks.spark.avro").save('/user/pvaithee07/solutions/wtocount')
+
+****** try to save in avro, have to test ********
+
+wc_count.saveAsTextFile('/user/pvaithee07/solutions/wtocount')  --- if we do this command, it will save the records to the directory as such. For ex (u'xsdsdsd',24) like that for each record. if we convert to data frame and write, it will be more readable. Also, use numfile to limit the file partitions, else huge files will be written into the multiple datasets. 
+
+
+
+
+
+Inactive Customers Exercise -
+------------------------------
+
+Since the data is present in local and not hdfs, we can convert the file to RDD by 2 ways - 
+
+1. copy the data from local file system to HDFS and then so sc.textFile()
+2. create a list by reading the local file and then parallelize
+   order=open('/user/pvaithee07/localdata/retail_db/retail_db/orders/part-00000').read().splitlines() --> should give the entire file path. 
+   order_rdd=sc.parallelize(order)
+
+order=sc.textFile('/user/pvaithee07/localdata/retail_db/retail_db/orders')
+cust=sc.textFile('/user/pvaithee07/localdata/retail_db/retail_db/customers')
+
+order_map=order.map(lambda x: (int(x.split(',')[2]),1))
+cust_map=cust.map(lambda x: ((int(x.split(',')[0])),(x.split(',')[1],x.split(',')[2])))
+
+output=order_map.rightOuterJoin(cust_map)
+
+
+output_filter=output.filter(lambda x: x[1][0]==None) ---> fetches only those entries where there is no match. 'None' is case sensitive
+
+output_form=output_filter.map(lambda x: (x[1][1][0] , x[1][1][1])).sortByKey()
+
+output_form.repartition(1).saveAsTextFile('/user/pvaithee07/solutions/inact_cust')
+
+----> repartition(num) - this is going to give the o/p files to the number given in braces. If not given, the number of o/p files depends on the no of partitions. If the file size is huge, there will be lot of partitions and the no of o/p files will also be high. 
+----> For the same purpose coalesce(num) can also be used. There is adv of using coalesce.
+
+
+Top 5 Customers by revenue for each month-
+-------------------------------------------
+
+cust - cust id, cust-fname, cust-lname, cust-email, cust-password, cust-street, city, state, zip
+order -  order-id, order-date, order-customer-id, order-status
+order_item - order-item-id, order-item-order-id, order-item-product-id, order-item-qty, order-item-subtotal, order-item-product-price
+products -  prod-id, prod-category-id, product-name, prod-descr, prod-price, prod-image
+
+final output = cust_fname, cust_lname, month, revenue
+
+# orders
+
+order=sc.textFile('/public/retail_db/orders')
+order_map=order.map(lambda x: ( int(x.split(',')[2]),(int(x.split(',')[0]), x.split(',')[1]) ))
+
+from pyspark import Row
+
+order_df=order_map.map(lambda x: Row(cust_id=x[0], order_id=x[1][0], order_date=x[1][1]) ).toDF()
+
+
+# order_item
+
+order_item=sc.textFile('/public/retail_db/order_items')
+order_item_map=order_item.map(lambda x: ( int(x.split(',')[1]), (float(x.split(',')[4])) ))
+
+order_item_df=order_item_map.map(lambda x: Row(order_id=x[0], order_subtotal=x[1]) ).toDF()
+
+
+# customer 
+
+cust=sc.textFile('/public/retail_db/customers')
+cust_map=cust.map(lambda x: (int(x.split(',')[0]), x.split(',')[1], x.split(',')[2]) )
+
+cust_df=cust_map.map(lambda x: Row(cust_id=x[0], cust_fname=x[1], cust_lname=x[2]) ).toDF()
+
+
+order_df.registerTempTable('orders')
+order_item_df.registerTempTable('order_items')
+cust_df.registerTempTable('customer')
+
+sqlContext.setConf("spark.sql.shuffle.partitions", "2")
+
+order_cust = sqlContext.sql(
+
+
+('select cu_jo.cust_fname, cu_jo.cust_lname, cu_jo.order_date, sum(cu_oi.order_subtotal) sum from \
+(select c.cust_id, c.cust_fname, c.cust_lname, o.order_id, o.order_date from customer c join orders o \
+on o.cust_id = c.cust_id) cu_jo join \
+(order_items oi where oi.order_id = cu_jo.order_id) cu_oi \
+
+group by cu_jo.cust_fname, cu_jo.cust_lname, cu_jo.order_date \
+order by cu_jo.order_date Asc, sum Desc' )
+
+
+
+
+
+top 3 crime - 
+---------------
+
+spark API
+
+crime=sc.textFile('/public/crime/csv/crime_data.csv')
+crime_filter=crime.filter(lambda x: x.split(',')[0]!='ID')
+crime_map=crime_filter.map(lambda x: (x.split(',')[0], x.split(',')[5], x.split(',')[7]) ) 
+crime_map_res=crime_map.filter(lambda x: (x[2] == 'RESIDENCE') )
+crime_type=crime_map_res.map(lambda x: (x[1], 1))
+crime_red=crime_type.reduceByKey(lambda x, y: x + y).map(lambda s: (s[1], s[0])).sortByKey(False).take(3)
+for i in crime_red.take(3):
+	print(i)
+
+crime_red.coalesce(1).save('/user/pvaithee07/solutions/crime_df', 'json')
+
+
+need to write o/p in json
+
+spark SQL
+
+crime=sc.textFile('/public/crime/csv/crime_data.csv')
+crime_filter=crime.filter(lambda x: x.split(',')[0]!='ID')
+
+from pyspark import Row
+crime_df=crime_filter.map(lambda x: Row(crime_type=x.split(',')[5], crime_descr=x.split(',')[7]) ).toDF()
+crime_df.registerTempTable('crime_table')
+Result=sqlContext.sql('select crime_type, count(*) ct from crime_table where crime_descr="RESIDENCE" group by crime_type  order by ct desc limit 3')
+Result.show()
+
+Result.write.json('/user/pvaithee07/solutions/crime_df') ---> json format
+Result.write.save('/user/pvaithee07/solutions/crime_df') ---> this saves in default mode, paraquet
+Result.write.text('/user/pvaithee07/solutions/crime_df') ---> text format.. but to save in text format, the dataframe should have only 1 column.
+
+
+
+
+nyse convert
+-------------
+
+ny_data=sc.textFile('/user/pvaithee07/localdata/nyse')
+from pyspark import Row
+
+ny_data_df=ny_data.map(lambda x: Row(stk_ticker=x.split(',')[0], t_date=x.split(',')[1], oprice=x.split(',')[2], hprice=x.split(',')[3], lprice=x.split(',')[4], \
+clprice=x.split(',')[5], vol=x.split(',')[6]) ).toDF()
+
+ny_data_df.write.save('/user/pvaithee07/solutions/nyse_pqt')
+
+
+
+daily revenue completed and closed-
+------------------------------------
+
+cust - cust id, cust-fname, cust-lname, cust-email, cust-password, cust-street, city, state, zip
+order -  order-id, order-date, order-customer-id, order-status
+order_item - order-item-id, order-item-order-id, order-item-product-id, order-item-qty, order-item-subtotal, order-item-product-price
+products -  prod-id, prod-category-id, product-name, prod-descr, prod-price, prod-image
+
+final o/p - date, prod-id, revenue
+
+# order
+order=sc.textFile('/public/retail_db/orders')
+order_fil=order.filter(lambda x: (x.split(',')[3]=='COMPLETED') or (x.split(',')[3]=='CLOSED'))
+order_map=order_fil.map(lambda x: ( int((x.split(',')[0])),(x.split(',')[1]) ))
+
+# order_item
+
+order_item=sc.textFile('/public/retail_db/order_items')
+order_item_map=order_item.map(lambda x: ( int(x.split(',')[1]), (int(x.split(',')[2]), float(x.split(',')[4])) ))
+
+# joining orders and order_item
+orderjoinor_item=order_map.join(order_item_map)
+
+#to be used with product
+orderjoin_map=orderjoinor_item.map(lambda x: (x[1][1][0], (x[1][0], x[1][1][1]) ) )
+
+.reduceByKey(lambda x, y: x + y)
+
+
+#below is python API to read the data from local filesystem (not HDFS)
+
+prd=open('/data/retail_db/products/part-00000').read().splitlines()
+prd_rdd=sc.parallelize(prd)
+prd_rdd_map=prd_rdd.map(lambda x: (int(x.split(',')[0]), x.split(',')[2]) )
+
+
+prd_order = prd_rdd_map.join(orderjoin_map)
+prd_order_map=prd_order.map(lambda x: ( (x[1][0], x[1][1][0]), x[1][1][1] ))
+prd_order_rev=prd_order_map.reduceByKey(lambda x, y: x + y)  ---> ( (pid, ord_date), sum(product_subtotal))
+
+# converting to ( (date, rev), p_name )
+
+prd_convert=prd_order_rev.map(lambda x: ( (x[0][1], -x[1]), x[0][0] ))
+prd_sort = prd_convert.sortByKey()
+
+prd_sort_write=prd_sort.map(lambda x: (x[0][0], -x[0][1], x[1]) )
+
+prd_sort_write=prd_sort.map(lambda x: x[0][0] + ',' + str(-x[0][1]) + ',' + x[1])
+prd_sort.saveAsTextFile(' ')
+
+
+***************************
+
+Same above exercise in dataframe
+
+# order
+
+order=sc.textFile('/public/retail_db/orders')
+order_fil=order.filter(lambda x: (x.split(',')[3]=='COMPLETED') or (x.split(',')[3]=='CLOSED'))
+order_map=order_fil.map(lambda x: ( int((x.split(',')[0])),(x.split(',')[1]) ))
+
+from pyspark import Row
+
+order_df=order_map.map(lambda x: Row(order_id=x[0], order_date=x[1]) ).toDF()
+
+
+# order_item
+
+order_item=sc.textFile('/public/retail_db/order_items')
+order_item_map=order_item.map(lambda x: ( int(x.split(',')[1]), (int(x.split(',')[2]), float(x.split(',')[4])) ))
+
+order_item_df=order_item_map.map(lambda x: Row(order_id=x[0], prod_id=x[1][0], Sub_total=x[1][1]) ).toDF()
+
+#products
+
+prd=open('/data/retail_db/products/part-00000').read().splitlines()
+prd_rdd=sc.parallelize(prd)
+prd_rdd_map=prd_rdd.map(lambda x: (int(x.split(',')[0]), x.split(',')[2]) )
+
+prd_df = prd_rdd_map.map(lambda x: Row(prod_id=x[0], prod_name=x[1]) ).toDF()
+
+
+
+order_df.registerTempTable('orders')
+order_item_df.registerTempTable('order_Item')
+prd_df.registerTempTable('Products')
+
+
+data = sqlContext.sql('Select pr.prod_name, oi_o.order_date, \
+sum(oi_o.Sub_total) sum from Products pr join ( \
+	select o.order_id, o.order_date, Oi.prod_id, Oi.Sub_total from orders o join order_Item Oi where o.order_id = Oi.order_id) oi_o \
+	where pr.prod_id = oi_o.prod_id \
+	group by pr.prod_name, oi_o.order_date \
+	order by oi_o.order_date Asc, sum Desc')	
+
+data.write.save('/user/pvaithee07/solutions/order_rev') --- this will save in default format which is parquet.
+
+sqlContext.setConf("spark.sql.shuffle.partitions", "2")
+dataRDD = data.map(lambda x: (x[0], x[1], x[2]) )
+dataRDD.coalesce(1).saveAsTextFile('/user/pvaithee07/solutions/order_rev_text')
+
+
+
+********************************
+
+Broadcast Examples
+
+
+
+prd=open('/data/retail_db/products/part-00000').read().splitlines()
+prd_map=dict(map(lambda x: (int(x.split(',')[0]), x.split(',')[2]), prd))  ---> the type of prd_map is dict
+prd_broad=sc.broadcast(prd_map)
+prd_broad.value[1345] -- this will give the value for this key 1345
+
+
+
+
+
+********************************
+
+
+Initalizing Spark 
+
+/etc/spark/conf
+spark.env.sh
+
+
+pyspark
+
+sc.stop
+
+from pyspark import SparkContext SparkConf
+
+conf=SparkConf().setAppMaster('yarn-client').setAppName('Test').set('spark.ui.port', '12344')
+sc=SparkContext(conf=conf)
+
+
+
+
+*******************************
+
+
+Word Count using accumulator
+
+
+file in /public/randomtextwriter
+
+count_word=sc.accumulator(0)
+
+wc=sc.textFile('/user/pvaithee07/localdata/smalldeck.txt')
+wc_fil=wc.filter(lambda x: x.split('|')[0]=='RED')
+wc_count=wc_fil.foreach(lambda x: count_word.add(1))
+
+wc_count.count()
+count_word.value
+
+------
+
+count_word=sc.accumulator(0)
+
+wc=sc.textFile('/user/pvaithee07/localdata/smalldeck.txt')
+wc_fil=wc.flatMap(lambda x: x.split('|'))
+wc_count=wc_fil.foreach(lambda x: count(x, count_word))
+
+def count(x, count_word):
+    if x == '2':
+	count_word.add(1)
+	return count_word    
+
+********************************
+
+read from Avro/JSON file.... frompyspark, file has to be made in data frame and register to a temp table.
+
+below is a customer file in JSON. fetch in dataframe and then do query
+
+df=sqlContext.jsonFile('/public/retail_db_json/categories/part-r-00000-ce1d8208-178d-48d3-bfb2-1a97d9c05094')
+df.registerTempTable('categories')
+df_data=sqlContext.sql('select * from categories where category_department_id="2" order by category_name')
+df_data.write.json(' ') ----- this will save in JSON format.
+
+df_data_rdd=df_data.map(lambda x: (x[0], x[1], x[2]) )
+df_data_rdd.saveAsTextFile('/user/pvaithee07/solutions/categories')
+
+df_data_rdd=df_data.map(lambda x: (str(x[0]) + '|' +  str(x[1]) + '|' +  x[2]) )
+df_data_rdd.coalesce(1).saveAsTextFile('/user/pvaithee07/solutions/categories/pipe')
+
+try to save as csv file in text format.
+
+
+
+*********************************
+
+spark-submit... validate different parameters
+
+
+bin/spark-submit my_script.py
+
+/etc/spark/conf/env.sh --- default parameters
+
+
+sc.stop()
+from pyspark import SparkConf and SparkContext
+
+conf=SparkConf().setMaster('yarn-client'). 
+sc=Sparkconf(conf=conf)
+sc=SparkContecxt=(conf=conf)
+
+*********************************
+
+
+Rank over()
+Row over()
+
+sum over()
+
+
+
+# order_item
+
+order_item=sc.textFile('/public/retail_db/order_items')
+order_item_map=order_item.map(lambda x: ( int(x.split(',')[1]), (int(x.split(',')[2]), float(x.split(',')[4])) ))
+
+from pyspark import Row
+order_item_df=order_item_map.map(lambda x: Row(order_id=x[0], prod_id=x[1][0], Sub_total=x[1][1]) ).toDF()
+
+order_item_df.registerTempTable('order_Item')
+
+data=sqlContext.sql('select order_id, prod_id, Sub_total, rank() over (order by Sub_total Desc) from order_Item')
+
+data=sqlContext.sql('select order_id, prod_id, Sub_total, rank() over (partition by prod_id order by Sub_total Desc) from order_Item')
+
+data=sqlContext.sql('select order_id, sum(Sub_total) as sum_order from order_Item group by order_id order by sum_order Desc')
+
+
+
+
+data=sqlContext.sql('select order_id, sum(Sub_total) over (partition by order_id) sum_order from order_Item where sum_order > 1000.00 group by order_id ')
+
+
+
+
+
+*********************************
+
+persist, cache
+
+for persist, to give storage level - from pyspark import StorageLevel
+
+
+*********************************
+
+errorsRDD = inputRDD.filter(lambda x: "error" in x)
+warningsRDD = inputRDD.filter(lambda x: "warning" in x)
+badLinesRDD = errorsRDD.union(warningsRDD)
+
+
+try the above with filter in one single statement. 
+
+
+
+
+
+
+
+
+
+**********************************
+
+
+nums = sc.parallelize([1, 2, 3, 4])
+squared = nums.map(lambda x: x * x).collect()
+for num in squared:
+    print "%i " % (num)
+
+
+
+
+
+
+*************************************
+
+
+json loads -> returns an object from a string representing a json object.
+load would take a file-like object, read the data from that object, and use that string to create an object:
+
+json dumps -> returns a string representing a json object from an object.
+dumps takes an object and produces a string:
+
+load and dump -> read/write from/to file instead of string
+
+
+*************************************
+
+
+To connect Spark SQL to an existing Hive installation, you need to provide a Hive configuration. You do so by copying your hive-site.xml file to Spark’s ./conf/ directory. Once you have done this, you create a HiveContext object
+
+
+*************************************
+
+
+Read RDD format - 
+
+
+Write RDD in multiple formats - 
+
+
+
+Read Dataframe from different format - 
+
+
+Write Dataframe into multiple format - 
+
+
+
+
+
+***********************
+
+Spark Exam Tips - 
+
+
+JSON - 
+******
+  Load JSON data to RDD - 
+  
+  from pyspark, we cannot read JSON file. We will have to read using dataframe. 
+  
+  data = sqlContext.jsonFile('file_name')
+
+
+  Write JSON RDD to output - 
+
+  from dataframe, save to JSON output. 
+  Result.write.json('path/name')
+  
+
+
+Text - 
+******
+
+   Read from textfile and create RDD - 
+   sc.textFile('full file name')
+
+   Write output in text format - 
+   data.saveAsTextFile('Full path name')
+
+
+Sequence File -
+***************
+
+
+
+
+
+
+Spark Library - 
+
+./bin/spark-submit
+conf/spark-defaults.conf --- default properties
+
+
+
+Sparkcontext, sparkconf
+
+conf = SparkConf().setAppName(appname).setMaster(master)
+sc=SparkContext(conf=conf)
+
+
+
+------------------------
+
+from apache manual -
+
+
+Bucketing and Partitioning - 
+
+df.write.bucketBy(42, "name").sortBy("age").saveAsTable("people_bucketed")
+df.write.partitionBy("favorite_color").format("parquet").save("namesPartByColor.parquet")
+
+
+
+Spark Session - 
+
+To create df from spark session. below is a temp view/table for the dataframe df.
+
+df.createOrReplaceTempView("people")
+sqlDF = spark.sql("SELECT * FROM people")
+
+
+# Register the DataFrame as a global temporary view
+df.createGlobalTempView("people")
+
+# Global temporary view is tied to a system preserved database `global_temp`
+spark.sql("SELECT * FROM global_temp.people").show()
+
+
+hive orc - 
+
+Create hive table with stored as ORC (from sqlContext.sql)
+Prepare the query from dataframe for the data that is needed.
+from the resultant dataframe, write to hive table as ORC.
+
+df.insertInto(table_name) --- insert to table.
+df.saveAsTable -- creates the table and load the data
+df.save('\path\name','json')
+df.write.json('\path\name')
+
+
+
+-------------------------------
+
+connecting to database - 
+
+Spark can connect to database using JDBC driver.
+
+org.apache.spark.sql.jdbc
+
+create the JDBC URL - It should have the hostname, port, database
+create the connection properties for the database. It will have the username and password.
+read the data from the sql database name using the JDBC URL, connection properties and database name. 
+   xyz = spark.read.jdbc(jdbcurl , 'database_name' , connection properties)
+
+
+
+pyspark cheat sheet - https://www.qubole.com/resources/pyspark-cheatsheet/
+
+
+
